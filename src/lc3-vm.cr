@@ -51,7 +51,8 @@ enum TrapCode : UInt16
   Halt  = 0x25
 end
 
-MEMORY                = Array(UInt16).new(UInt16::MAX, 0)
+# LC-3 addresses a full 2**16 words, so 0xFFFF must be a valid index.
+MEMORY                = Array(UInt16).new(UInt16::MAX.to_i32 + 1, 0)
 REGISTER_STORAGE      = Array(UInt16).new(Register::Count.value, 0)
 PROGRAM_COUNTER_START = 0x3000_u16
 
@@ -61,7 +62,7 @@ end
 
 def sign_extend(value : UInt16, bit_count : UInt8)
   if (value >> (bit_count - 1)) & 1 != 0
-    value |= (0xFFFF << bit_count)
+    value |= (0xFFFF_u16 << bit_count)
   end
 
   value
@@ -184,11 +185,15 @@ def dispatch
 
   REGISTER_STORAGE[Register::ProgramCounter.value] = PROGRAM_COUNTER_START
 
-  # Actually overflow occur when processing the instruction
+  # LC-3 arithmetic is modulo 2**16 by definition (ISA appendix A: results are
+  # truncated to 16 bits), so every address/register add here uses Crystal's
+  # wrapping operators (&+). Plain + would raise OverflowError on a wrap that
+  # the ISA requires to succeed -- e.g. PC at 0xFFFF advancing to 0x0000, or a
+  # negative sign-extended offset added to a small address.
   running : Bool = true
   while running
     instruction = read_memory(REGISTER_STORAGE[Register::ProgramCounter.value])
-    REGISTER_STORAGE[Register::ProgramCounter.value] += 1
+    REGISTER_STORAGE[Register::ProgramCounter.value] = REGISTER_STORAGE[Register::ProgramCounter.value] &+ 1
     operator = instruction >> 12
 
     case Instruction.new(operator)
@@ -317,29 +322,3 @@ def dispatch
     end
   end
 end
-
-if ARGV.size == 0
-  puts "lc3 [image-file1] ..."
-  exit
-end
-
-filenames = ARGV
-filenames.each { |filename| read_image_file(filename) }
-
-stdin : Int32 = 0
-
-# Set Termios
-term : LibC::Termios = LibC::Termios.new
-
-LibC.tcgetattr(stdin, pointerof(term))
-
-term.c_iflag &= LibC::IGNBRK | LibC::BRKINT | LibC::PARMRK | LibC::ISTRIP | LibC::INLCR | LibC::IGNCR | LibC::ICRNL | LibC::IXON
-term.c_lflag &= ~(LibC::ICANON | LibC::ECHO)
-
-LibC.tcsetattr(stdin, LibC::TCSANOW, pointerof(term))
-
-dispatch()
-
-# Reset termios data
-term.c_lflag = 0
-LibC.tcsetattr(stdin, LibC::TCSANOW, pointerof(term))
