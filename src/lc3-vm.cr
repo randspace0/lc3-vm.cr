@@ -128,7 +128,7 @@ def execute_trap(instruction : UInt16) : Bool
     input_charcode = gets(1).not_nil!.byte_at(0).to_u16
     REGISTER_STORAGE[Register::R0.value] = input_charcode
   when TrapCode::Out
-    output = REGISTER_STORAGE[Register::R0.value & 0xFF].unsafe_chr
+    output = (REGISTER_STORAGE[Register::R0.value] & 0xFF).unsafe_chr
     print(output)
   when TrapCode::Puts
     char_location = REGISTER_STORAGE[Register::R0.value]
@@ -229,7 +229,7 @@ def dispatch
       dr = (instruction >> 9) & 0x7
       sr = (instruction >> 6) & 0x7
 
-      REGISTER_STORAGE[dr] = ~REGISTER_STORAGE[dr]
+      REGISTER_STORAGE[dr] = ~REGISTER_STORAGE[sr]
 
       update_flags(dr)
     when Instruction::BR

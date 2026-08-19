@@ -35,3 +35,23 @@ describe "16-bit wraparound" do
     (0x0002_u16 &+ sign_extend(0x1FF_u16, 9)).should eq(0x0001_u16)
   end
 end
+
+# dispatch() runs its own fetch loop, so the only way to exercise a decoded
+# instruction is to run a real image. spec/fixtures/not-out.obj is five words:
+#   LD R1, #3 / NOT R0, R1 / TRAP OUT / TRAP HALT / 0x00BE
+# ~0x00BE = 0xFF41, so OUT must print (0xFF41 & 0xFF) = 0x41 = "A".
+# NOT reading the wrong register prints U+FFFF instead, and OUT failing to mask
+# to a byte prints the full codepoint rather than one character.
+describe "NOT and TRAP OUT" do
+  it "negates the source register and prints the low byte" do
+    output = IO::Memory.new
+    status = Process.run(
+      "crystal",
+      ["run", "--no-debug", "#{__DIR__}/../src/main.cr", "--", "#{__DIR__}/fixtures/not-out.obj"],
+      output: output, error: Process::Redirect::Inherit
+    )
+
+    status.success?.should be_true
+    output.to_s.should eq("AHALT")
+  end
+end
